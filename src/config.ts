@@ -67,3 +67,40 @@ export const TRIGGER_PATTERN = new RegExp(
 // Uses system timezone by default
 export const TIMEZONE =
   process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+// Serena HTTP bridge configuration
+const serenaEnv = readEnvFile([
+  'SERENA_MCP_URL',
+  'SERENA_START_CMD',
+  'SERENA_PROJECT_PATHS',
+]);
+
+export const SERENA_MCP_URL: string | undefined =
+  process.env.SERENA_MCP_URL || serenaEnv.SERENA_MCP_URL || undefined;
+
+export const SERENA_START_CMD: string | undefined =
+  process.env.SERENA_START_CMD || serenaEnv.SERENA_START_CMD || undefined;
+
+export const SERENA_PROJECT_PATHS_RAW: string | undefined =
+  process.env.SERENA_PROJECT_PATHS ||
+  serenaEnv.SERENA_PROJECT_PATHS ||
+  undefined;
+
+/**
+ * Parse SERENA_PROJECT_PATHS="name:/host/path,name2:/host/path2" into a map.
+ * Splits only on the first colon per entry so paths with colons are preserved.
+ */
+export function parseProjectPaths(
+  raw: string | undefined,
+): Map<string, string> {
+  const result = new Map<string, string>();
+  if (!raw) return result;
+  for (const entry of raw.split(',')) {
+    const colon = entry.indexOf(':');
+    if (colon === -1) continue;
+    const name = entry.slice(0, colon).trim();
+    const hostPath = entry.slice(colon + 1).trim();
+    if (name && hostPath) result.set(name, hostPath);
+  }
+  return result;
+}

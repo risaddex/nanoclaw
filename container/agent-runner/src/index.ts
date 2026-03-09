@@ -28,6 +28,8 @@ interface ContainerInput {
   isScheduledTask?: boolean;
   assistantName?: string;
   secrets?: Record<string, string>;
+  serenaMcpUrl?: string;
+  availableProjects?: string[];
 }
 
 interface ContainerOutput {
@@ -348,6 +350,38 @@ function waitForIpcMessage(): Promise<string | null> {
   });
 }
 
+function buildSerenaContext(
+  serenaMcpUrl: string | undefined,
+  availableProjects: string[] | undefined,
+): string | undefined {
+  if (!serenaMcpUrl) return undefined;
+
+  const lines: string[] = [
+    '',
+    '## Serena MCP Tools Available',
+    '',
+    'You have access to Serena MCP tools for intelligent code navigation and editing.',
+    'Always call `mcp__serena__activate_project` FIRST to select the project you will work on.',
+    '',
+  ];
+
+  if (availableProjects && availableProjects.length > 0) {
+    lines.push('**Available projects:**');
+    for (const name of availableProjects) {
+      lines.push(`- \`${name}\` (mounted at \`/workspace/extra/${name}/\` for Bash)`);
+    }
+    lines.push('');
+    lines.push('**Workflow:**');
+    lines.push('1. Call `mcp__serena__activate_project("<project-name>")` to load the project');
+    lines.push('2. Use `mcp__serena__find_symbol`, `mcp__serena__search_for_pattern`, etc. to explore code');
+    lines.push('3. Use `mcp__serena__replace_symbol_body` or `mcp__serena__create_text_file` to edit');
+    lines.push('4. Use `Bash` in `/workspace/extra/<project-name>/` to run tests or builds');
+    lines.push('5. Use `mcp__serena__write_memory` to persist notes for future sessions');
+  }
+
+  return lines.join('\n');
+}
+
 /**
  * Run a single query and stream results via writeOutput.
  * Uses MessageStream (AsyncIterable) to keep isSingleUserTurn=false,
@@ -391,12 +425,19 @@ async function runQuery(
   let messageCount = 0;
   let resultCount = 0;
 
+  // Build Serena MCP server config if URL is provided
+  const serenaMcpUrl = containerInput.serenaMcpUrl;
+  const serenaContext = buildSerenaContext(serenaMcpUrl, containerInput.availableProjects);
+
   // Load global CLAUDE.md as additional system context (shared across all groups)
   const globalClaudeMdPath = '/workspace/global/CLAUDE.md';
   let globalClaudeMd: string | undefined;
   if (!containerInput.isMain && fs.existsSync(globalClaudeMdPath)) {
     globalClaudeMd = fs.readFileSync(globalClaudeMdPath, 'utf-8');
   }
+
+  // Combine global CLAUDE.md + Serena context for system prompt
+  const systemPromptAppend = [globalClaudeMd, serenaContext].filter(Boolean).join('\n\n');
 
   // Discover additional directories mounted at /workspace/extra/*
   // These are passed to the SDK so their CLAUDE.md files are loaded automatically
@@ -421,8 +462,8 @@ async function runQuery(
       additionalDirectories: extraDirs.length > 0 ? extraDirs : undefined,
       resume: sessionId,
       resumeSessionAt: resumeAt,
-      systemPrompt: globalClaudeMd
-        ? { type: 'preset' as const, preset: 'claude_code' as const, append: globalClaudeMd }
+      systemPrompt: systemPromptAppend
+        ? { type: 'preset' as const, preset: 'claude_code' as const, append: systemPromptAppend }
         : undefined,
       allowedTools: [
         'Bash',
@@ -432,7 +473,8 @@ async function runQuery(
         'TeamCreate', 'TeamDelete', 'SendMessage',
         'TodoWrite', 'ToolSearch', 'Skill',
         'NotebookEdit',
-        'mcp__nanoclaw__*'
+        'mcp__nanoclaw__*',
+        'mcp__serena__*',
       ],
       env: sdkEnv,
       permissionMode: 'bypassPermissions',
@@ -448,6 +490,12 @@ async function runQuery(
             NANOCLAW_IS_MAIN: containerInput.isMain ? '1' : '0',
           },
         },
+        ...(serenaMcpUrl && {
+          serena: {
+            url: serenaMcpUrl,
+            type: 'http' as const,
+          },
+        }),
       },
       hooks: {
         PreCompact: [{ hooks: [createPreCompactHook(containerInput.assistantName)] }],

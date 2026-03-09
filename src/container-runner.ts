@@ -4,6 +4,7 @@
  */
 import { ChildProcess, exec, spawn } from 'child_process';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 
 import {
@@ -14,6 +15,9 @@ import {
   GROUPS_DIR,
   IDLE_TIMEOUT,
   TIMEZONE,
+  parseProjectPaths,
+  SERENA_PROJECT_PATHS_RAW,
+  SERENA_MCP_URL,
 } from './config.js';
 import { readEnvFile } from './env.js';
 import { resolveGroupFolderPath, resolveGroupIpcPath } from './group-folder.js';
@@ -39,6 +43,8 @@ export interface ContainerInput {
   isScheduledTask?: boolean;
   assistantName?: string;
   secrets?: Record<string, string>;
+  serenaMcpUrl?: string;
+  availableProjects?: string[];
 }
 
 export interface ContainerOutput {
@@ -207,6 +213,27 @@ function buildVolumeMounts(
     mounts.push(...validatedMounts);
   }
 
+  // Serena project mounts: each project in SERENA_PROJECT_PATHS → /workspace/extra/{name}/
+  const projectPaths = parseProjectPaths(SERENA_PROJECT_PATHS_RAW);
+  for (const [name, hostPath] of projectPaths) {
+    const expandedPath = hostPath.replace(
+      /^~/,
+      process.env.HOME || os.homedir(),
+    );
+    if (fs.existsSync(expandedPath)) {
+      mounts.push({
+        hostPath: expandedPath,
+        containerPath: `/workspace/extra/${name}`,
+        readonly: true,
+      });
+    } else {
+      logger.warn(
+        { name, hostPath: expandedPath },
+        'Serena project path not found, skipping mount',
+      );
+    }
+  }
+
   return mounts;
 }
 
@@ -248,6 +275,12 @@ function buildContainerArgs(
     } else {
       args.push('-v', `${mount.hostPath}:${mount.containerPath}`);
     }
+  }
+
+  // Serena bridge: allow container to reach host.docker.internal
+  if (SERENA_MCP_URL) {
+    args.push('--add-host=host.docker.internal:host-gateway');
+    args.push('-e', `SERENA_MCP_URL=${SERENA_MCP_URL}`);
   }
 
   args.push(CONTAINER_IMAGE);
@@ -309,12 +342,21 @@ export async function runContainerAgent(
     let stdoutTruncated = false;
     let stderrTruncated = false;
 
+    // Inject Serena config into input
+    if (SERENA_MCP_URL) {
+      input.serenaMcpUrl = SERENA_MCP_URL;
+      input.availableProjects = Array.from(
+        parseProjectPaths(SERENA_PROJECT_PATHS_RAW).keys(),
+      );
+    }
     // Pass secrets via stdin (never written to disk or mounted as files)
     input.secrets = readSecrets();
     container.stdin.write(JSON.stringify(input));
     container.stdin.end();
-    // Remove secrets from input so they don't appear in logs
+    // Remove secrets and serena config from input so they don't appear in logs
     delete input.secrets;
+    delete input.serenaMcpUrl;
+    delete input.availableProjects;
 
     // Streaming output: parse OUTPUT_START/END marker pairs as they arrive
     let parseBuffer = '';

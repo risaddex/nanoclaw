@@ -1,3 +1,8 @@
 {
-  "mcpServers": {}
+  "mcpServers": {
+    "jetbrains": {
+      "url": "http://host.docker.intertnal:64342/sse",
+      "type": "sse"
+    }
+  }
 }

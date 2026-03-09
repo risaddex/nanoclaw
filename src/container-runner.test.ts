@@ -15,6 +15,18 @@ vi.mock('./config.js', () => ({
   GROUPS_DIR: '/tmp/nanoclaw-test-groups',
   IDLE_TIMEOUT: 1800000, // 30min
   TIMEZONE: 'America/Los_Angeles',
+  SERENA_MCP_URL: undefined,
+  SERENA_PROJECT_PATHS_RAW: undefined,
+  parseProjectPaths: (raw: string | undefined) => {
+    const m = new Map<string, string>();
+    if (!raw) return m;
+    for (const entry of raw.split(',')) {
+      const colon = entry.indexOf(':');
+      if (colon === -1) continue;
+      m.set(entry.slice(0, colon).trim(), entry.slice(colon + 1).trim());
+    }
+    return m;
+  },
 }));
 
 // Mock logger
@@ -205,5 +217,25 @@ describe('container-runner timeout behavior', () => {
     const result = await resultPromise;
     expect(result.status).toBe('success');
     expect(result.newSessionId).toBe('session-456');
+  });
+});
+
+describe('parseProjectPaths integration', () => {
+  it('real parseProjectPaths handles empty and valid inputs', async () => {
+    const { parseProjectPaths } =
+      await vi.importActual<typeof import('./config.js')>('./config.js');
+    expect(parseProjectPaths(undefined)).toEqual(new Map());
+    expect(parseProjectPaths('myapp:/home/user/Work/myapp')).toEqual(
+      new Map([['myapp', '/home/user/Work/myapp']]),
+    );
+    expect(parseProjectPaths('foo:/path/foo,bar:/path/bar')).toEqual(
+      new Map([
+        ['foo', '/path/foo'],
+        ['bar', '/path/bar'],
+      ]),
+    );
+    // Empty name or path after trim should be skipped
+    expect(parseProjectPaths(' : /some/path')).toEqual(new Map());
+    expect(parseProjectPaths('name: ')).toEqual(new Map());
   });
 });
