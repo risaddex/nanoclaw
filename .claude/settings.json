@@ -3,7 +3,8 @@
     "network": {
       "allowedDomains": [
         "npm.registry.com",
-        "us.i.posthog.com"
+        "us.i.posthog.com",
+        "n8n.daniloromano.dev"
       ]
     }
   }
