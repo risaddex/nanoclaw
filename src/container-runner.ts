@@ -192,6 +192,16 @@ function buildVolumeMounts(
   fs.mkdirSync(path.join(groupIpcDir, 'messages'), { recursive: true });
   fs.mkdirSync(path.join(groupIpcDir, 'tasks'), { recursive: true });
   fs.mkdirSync(path.join(groupIpcDir, 'input'), { recursive: true });
+
+  // Copy mcp-servers.json so the agent-runner can load external MCP config
+  const mcpServersFile = path.join(projectRoot, 'data', 'mcp-servers.json');
+  if (fs.existsSync(mcpServersFile)) {
+    fs.copyFileSync(
+      mcpServersFile,
+      path.join(groupIpcDir, 'mcp-servers.json'),
+    );
+  }
+
   mounts.push({
     hostPath: groupIpcDir,
     containerPath: '/workspace/ipc',

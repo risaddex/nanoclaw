@@ -24,6 +24,56 @@ import {
 } from '@anthropic-ai/claude-agent-sdk';
 import { fileURLToPath } from 'url';
 
+interface McpServerConfig {
+  command: string;
+  args: string[];
+  env?: Record<string, string>;
+}
+
+interface ExternalMcpConfig {
+  servers: Record<string, McpServerConfig>;
+  allowedTools: string[];
+}
+
+const MCP_CONFIG_PATH = '/workspace/ipc/mcp-servers.json';
+
+const PROXY_ENV_KEYS = [
+  'HTTPS_PROXY',
+  'HTTP_PROXY',
+  'https_proxy',
+  'http_proxy',
+  'NODE_EXTRA_CA_CERTS',
+  'SSL_CERT_FILE',
+];
+
+function loadExternalMcpConfig(): ExternalMcpConfig {
+  try {
+    if (!fs.existsSync(MCP_CONFIG_PATH))
+      return { servers: {}, allowedTools: [] };
+    const raw = fs.readFileSync(MCP_CONFIG_PATH, 'utf-8');
+    const config = JSON.parse(raw) as ExternalMcpConfig;
+    return {
+      servers: config.servers || {},
+      allowedTools: config.allowedTools || [],
+    };
+  } catch (err) {
+    log(`[mcp-servers] Failed to load config: ${err}`);
+    return { servers: {}, allowedTools: [] };
+  }
+}
+
+function withProxyEnv(
+  env: Record<string, string> = {},
+): Record<string, string> {
+  const proxy: Record<string, string> = {};
+  for (const key of PROXY_ENV_KEYS) {
+    const val = process.env[key];
+    if (val) proxy[key] = val;
+  }
+  return { ...proxy, ...env };
+}
+
+
 interface ContainerInput {
   prompt: string;
   sessionId?: string;
@@ -412,6 +462,8 @@ async function runQuery(
   let messageCount = 0;
   let resultCount = 0;
 
+  const externalMcp = loadExternalMcpConfig();
+
   // Load global CLAUDE.md as additional system context (shared across all groups)
   const globalClaudeMdPath = '/workspace/global/CLAUDE.md';
   let globalClaudeMd: string | undefined;
@@ -469,7 +521,8 @@ async function runQuery(
         'Skill',
         'NotebookEdit',
         'mcp__nanoclaw__*',
-          "mcp__n8n-mcp__*"
+        'mcp__n8n-mcp__*',
+        ...externalMcp.allowedTools,
       ],
       env: sdkEnv,
       permissionMode: 'bypassPermissions',
@@ -485,6 +538,12 @@ async function runQuery(
             NANOCLAW_IS_MAIN: containerInput.isMain ? '1' : '0',
           },
         },
+        ...Object.fromEntries(
+          Object.entries(externalMcp.servers).map(([name, cfg]) => [
+            name,
+            { ...cfg, env: withProxyEnv(cfg.env) },
+          ]),
+        ),
       },
       hooks: {
         PreCompact: [
