@@ -196,10 +196,7 @@ function buildVolumeMounts(
   // Copy mcp-servers.json so the agent-runner can load external MCP config
   const mcpServersFile = path.join(projectRoot, 'data', 'mcp-servers.json');
   if (fs.existsSync(mcpServersFile)) {
-    fs.copyFileSync(
-      mcpServersFile,
-      path.join(groupIpcDir, 'mcp-servers.json'),
-    );
+    fs.copyFileSync(mcpServersFile, path.join(groupIpcDir, 'mcp-servers.json'));
   }
 
   mounts.push({
