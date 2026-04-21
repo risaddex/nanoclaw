@@ -440,6 +440,16 @@ export class WhatsAppChannel implements Channel {
    * Fetches all participating groups and stores their names in the database.
    * Called on startup, daily, and on-demand via IPC.
    */
+  async listGroups(): Promise<Record<string, GroupMetadata>> {
+    if (!this.connected) throw new Error('WhatsApp channel not connected');
+    return this.sock.groupFetchAllParticipating();
+  }
+
+  async getGroupMetadata(jid: string): Promise<GroupMetadata | undefined> {
+    if (!this.connected) throw new Error('WhatsApp channel not connected');
+    return this.getNormalizedGroupMetadata(jid, true);
+  }
+
   async syncGroupMetadata(force = false): Promise<void> {
     if (!force) {
       const lastSync = getLastGroupSync();

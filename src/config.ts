@@ -24,6 +24,11 @@ export const OLLAMA_ADMIN_TOOLS =
 export const POLL_INTERVAL = 2000;
 export const SCHEDULER_POLL_INTERVAL = 60000;
 
+export const ADMIN_PORT = Math.max(
+  1,
+  parseInt(process.env.ADMIN_PORT || '7324', 10) || 7324,
+);
+
 // Absolute paths needed for container mounts
 const PROJECT_ROOT = process.cwd();
 const HOME_DIR = process.env.HOME || os.homedir();

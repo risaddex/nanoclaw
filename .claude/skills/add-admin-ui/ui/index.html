@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NanoClaw Admin</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">N</span>
+        <h1>NanoClaw Admin</h1>
+      </div>
+      <div class="channel-pills" id="channel-pills" aria-label="Channel status"></div>
+    </header>
+
+    <div class="layout">
+      <nav class="sidebar" aria-label="Sections">
+        <ul class="tablist" role="tablist">
+          <li>
+            <button class="tab" data-tab="groups" role="tab" aria-selected="true">
+              <span class="tab-key">1</span>
+              <span>Groups</span>
+            </button>
+          </li>
+          <li>
+            <button class="tab" data-tab="chats" role="tab" aria-selected="false">
+              <span class="tab-key">2</span>
+              <span>Chats</span>
+            </button>
+          </li>
+          <li>
+            <button class="tab" data-tab="registered" role="tab" aria-selected="false">
+              <span class="tab-key">3</span>
+              <span>Registered</span>
+            </button>
+          </li>
+          <li>
+            <button class="tab" data-tab="config" role="tab" aria-selected="false">
+              <span class="tab-key">4</span>
+              <span>Config</span>
+            </button>
+          </li>
+        </ul>
+        <footer class="sidebar-footer">
+          <p class="hint">
+            Press <kbd>/</kbd> to search, <kbd>1</kbd>&ndash;<kbd>4</kbd> to switch tabs.
+          </p>
+        </footer>
+      </nav>
+
+      <main class="content">
+        <!-- Groups -->
+        <section class="panel" data-panel="groups" aria-labelledby="groups-title">
+          <div class="panel-head">
+            <div>
+              <h2 id="groups-title">WhatsApp groups</h2>
+              <p class="panel-sub">Groups the Baileys socket is currently participating in.</p>
+            </div>
+            <div class="panel-actions">
+              <input
+                type="search"
+                class="search"
+                data-search="groups"
+                placeholder="Filter by subject..."
+                aria-label="Filter groups"
+              />
+              <button class="btn" data-refresh="groups" title="Refresh">Refresh</button>
+            </div>
+          </div>
+          <div class="panel-body" data-body="groups"></div>
+        </section>
+
+        <!-- Chats -->
+        <section class="panel hidden" data-panel="chats" aria-labelledby="chats-title">
+          <div class="panel-head">
+            <div>
+              <h2 id="chats-title">Chats</h2>
+              <p class="panel-sub">Everything the SQLite DB has seen at least once.</p>
+            </div>
+            <div class="panel-actions">
+              <input
+                type="search"
+                class="search"
+                data-search="chats"
+                placeholder="Filter by name or JID..."
+                aria-label="Filter chats"
+              />
+              <button class="btn" data-refresh="chats">Refresh</button>
+            </div>
+          </div>
+          <div class="panel-body" data-body="chats"></div>
+        </section>
+
+        <!-- Registered -->
+        <section class="panel hidden" data-panel="registered" aria-labelledby="registered-title">
+          <div class="panel-head">
+            <div>
+              <h2 id="registered-title">Registered chats</h2>
+              <p class="panel-sub">Routing rules. The main chat has a highlighted border.</p>
+            </div>
+            <div class="panel-actions">
+              <input
+                type="search"
+                class="search"
+                data-search="registered"
+                placeholder="Filter by name or JID..."
+                aria-label="Filter registered"
+              />
+              <button class="btn" data-refresh="registered">Refresh</button>
+            </div>
+          </div>
+          <div class="panel-body" data-body="registered"></div>
+        </section>
+
+        <!-- Config -->
+        <section class="panel hidden" data-panel="config" aria-labelledby="config-title">
+          <div class="panel-head">
+            <div>
+              <h2 id="config-title">Runtime configuration</h2>
+              <p class="panel-sub">Resolved values the orchestrator is using right now.</p>
+            </div>
+            <div class="panel-actions">
+              <button class="btn" data-refresh="config">Refresh</button>
+            </div>
+          </div>
+          <div class="panel-body" data-body="config"></div>
+        </section>
+      </main>
+    </div>
+
+    <!-- Group drawer -->
+    <aside class="drawer" id="drawer" aria-hidden="true" aria-labelledby="drawer-title">
+      <div class="drawer-scrim" data-close-drawer></div>
+      <div class="drawer-panel" role="dialog" aria-modal="true">
+        <div class="drawer-head">
+          <h3 id="drawer-title">Group details</h3>
+          <button class="btn btn-ghost" data-close-drawer aria-label="Close">Close</button>
+        </div>
+        <div class="drawer-body" id="drawer-body"></div>
+      </div>
+    </aside>
+
+    <!-- Toast -->
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

@@ -1,4 +1,5 @@
 import fs from 'fs';
+import type { Server as HttpServer } from 'http';
 import path from 'path';
 
 import { OneCLI } from '@onecli-sh/sdk';
@@ -62,6 +63,7 @@ import {
   loadSenderAllowlist,
   shouldDropMessage,
 } from './sender-allowlist.js';
+import { startAdminServer } from './admin-server.js';
 import { startSessionCleanup } from './session-cleanup.js';
 import { startSchedulerLoop } from './task-scheduler.js';
 import { Channel, NewMessage, RegisteredGroup } from './types.js';
@@ -583,9 +585,14 @@ async function main(): Promise<void> {
 
   restoreRemoteControl();
 
+  let adminServer: HttpServer | undefined;
+
   // Graceful shutdown handlers
   const shutdown = async (signal: string) => {
     logger.info({ signal }, 'Shutdown signal received');
+    if (adminServer) {
+      await new Promise<void>((resolve) => adminServer!.close(() => resolve()));
+    }
     await queue.shutdown(10000);
     for (const ch of channels) await ch.disconnect();
     process.exit(0);
@@ -695,6 +702,8 @@ async function main(): Promise<void> {
     logger.fatal('No channels connected');
     process.exit(1);
   }
+
+  adminServer = startAdminServer(channels);
 
   // Start subsystems (independently of connection handler)
   startSchedulerLoop({
