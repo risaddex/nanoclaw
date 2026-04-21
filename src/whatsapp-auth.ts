@@ -17,28 +17,10 @@ import {
   makeWASocket,
   Browsers,
   DisconnectReason,
-  fetchLatestWaWebVersion,
   makeCacheableSignalKeyStore,
   useMultiFileAuthState,
 } from '@whiskeysockets/baileys';
-
-// Fix Baileys 6.x bug: getPlatformId sends charCode (49) instead of enum value (1).
-// Fixed in Baileys 7.x but not backported. Without this, pairing codes fail with
-// "couldn't link device" because WhatsApp receives an invalid platform ID.
-// NOTE: Must use createRequire — ESM `import *` creates a read-only namespace.
-import { createRequire } from 'module';
-const _require = createRequire(import.meta.url);
-const _generics = _require(
-  '@whiskeysockets/baileys/lib/Utils/generics',
-) as Record<string, unknown>;
-const { proto } = _require('@whiskeysockets/baileys') as { proto: any };
-_generics.getPlatformId = (browser: string): string => {
-  const platformType =
-    proto.DeviceProps.PlatformType[
-      browser.toUpperCase() as keyof typeof proto.DeviceProps.PlatformType
-    ];
-  return platformType ? platformType.toString() : '1';
-};
+// v7: getPlatformId bug fixed upstream; createRequire hack no longer needed.
 
 const AUTH_DIR = './store/auth';
 const QR_FILE = './store/qr-data.txt';
@@ -80,15 +62,8 @@ async function connectSocket(
     process.exit(0);
   }
 
-  const { version } = await fetchLatestWaWebVersion({}).catch((err) => {
-    logger.warn(
-      { err },
-      'Failed to fetch latest WA Web version, using default',
-    );
-    return { version: undefined };
-  });
+  // v7: version locked internally — do not override with fetchLatestWaWebVersion.
   const sock = makeWASocket({
-    version,
     auth: {
       creds: state.creds,
       keys: makeCacheableSignalKeyStore(state.keys, logger),

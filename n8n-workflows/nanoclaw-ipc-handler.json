@@ -1,0 +1,287 @@
+{
+  "name": "NanoClaw IPC Command Handler",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "nanoclaw-ipc",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": false
+        }
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000001",
+      "name": "IPC Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "nanoclaw-ipc"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f1",
+              "name": "type",
+              "value": "={{ $json.body.type ?? $json.type ?? 'unknown' }}",
+              "type": "string"
+            },
+            {
+              "id": "f2",
+              "name": "chatJid",
+              "value": "={{ $json.body.chatJid ?? $json.body.jid ?? $json.chatJid ?? '' }}",
+              "type": "string"
+            },
+            {
+              "id": "f3",
+              "name": "groupFolder",
+              "value": "={{ $json.body.groupFolder ?? $json.groupFolder ?? '' }}",
+              "type": "string"
+            },
+            {
+              "id": "f4",
+              "name": "text",
+              "value": "={{ $json.body.text ?? $json.body.message ?? $json.text ?? '' }}",
+              "type": "string"
+            },
+            {
+              "id": "f5",
+              "name": "prompt",
+              "value": "={{ $json.body.prompt ?? $json.prompt ?? '' }}",
+              "type": "string"
+            },
+            {
+              "id": "f6",
+              "name": "taskId",
+              "value": "={{ $json.body.taskId ?? $json.taskId ?? '' }}",
+              "type": "string"
+            },
+            {
+              "id": "f7",
+              "name": "scheduleType",
+              "value": "={{ $json.body.schedule_type ?? $json.schedule_type ?? 'once' }}",
+              "type": "string"
+            },
+            {
+              "id": "f8",
+              "name": "scheduleValue",
+              "value": "={{ $json.body.schedule_value ?? $json.schedule_value ?? '' }}",
+              "type": "string"
+            },
+            {
+              "id": "f9",
+              "name": "payload",
+              "value": "={{ $json.body ?? $json }}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0002-0002-0002-000000000002",
+      "name": "Normalize Input",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.type }}",
+                    "rightValue": "send_message",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "send_message"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.type }}",
+                    "rightValue": "schedule_task",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "schedule_task"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.type }}",
+                    "rightValue": "get_status",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "get_status"
+            }
+          ]
+        },
+        "options": { "fallbackOutput": "extra" }
+      },
+      "id": "a1b2c3d4-0003-0003-0003-000000000003",
+      "name": "Route by Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:7324/api/webhook",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"jid\": \"{{ $json.chatJid }}\",\n  \"message\": \"{{ $json.text }}\"\n}",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0004-0004-0004-000000000004",
+      "name": "Send Message via Admin API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 120]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:7324/api/webhook",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"jid\": \"{{ $json.chatJid }}\",\n  \"message\": \"[n8n] Tarefa agendada: {{ $json.scheduleType }} / {{ $json.scheduleValue }}\"\n}",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0005-0005-0005-000000000005",
+      "name": "Write IPC Task File",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 300],
+      "notes": "Writes the schedule_task IPC JSON to NanoClaw's data/ipc directory so it is picked up by the IPC watcher.\n\nIn production, replace this node with an 'Execute Command' node that runs:\n  node -e \"require('fs').writeFileSync('/path/to/nanoclaw/data/ipc/<group>/tasks/<uuid>.json', JSON.stringify({type:'schedule_task', ...}));\"\nor call a dedicated REST endpoint if you add one to the admin server."
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://127.0.0.1:7324/api/config",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0006-0006-0006-000000000006",
+      "name": "Get NanoClaw Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 480]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "r1",
+              "name": "result",
+              "value": "=passthrough — unrecognised type: {{ $json.type }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0007-0007-0007-000000000007",
+      "name": "Unknown Command",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [900, 660]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"ok\": true,\n  \"type\": \"{{ $('Normalize Input').item.json.type }}\",\n  \"timestamp\": \"{{ $now.toISO() }}\"\n}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "a1b2c3d4-0008-0008-0008-000000000008",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1120, 300]
+    }
+  ],
+  "connections": {
+    "IPC Webhook": {
+      "main": [
+        [{ "node": "Normalize Input", "type": "main", "index": 0 }]
+      ]
+    },
+    "Normalize Input": {
+      "main": [
+        [{ "node": "Route by Type", "type": "main", "index": 0 }]
+      ]
+    },
+    "Route by Type": {
+      "main": [
+        [{ "node": "Send Message via Admin API", "type": "main", "index": 0 }],
+        [{ "node": "Write IPC Task File", "type": "main", "index": 0 }],
+        [{ "node": "Get NanoClaw Status", "type": "main", "index": 0 }],
+        [{ "node": "Unknown Command", "type": "main", "index": 0 }]
+      ]
+    },
+    "Send Message via Admin API": {
+      "main": [
+        [{ "node": "Respond OK", "type": "main", "index": 0 }]
+      ]
+    },
+    "Write IPC Task File": {
+      "main": [
+        [{ "node": "Respond OK", "type": "main", "index": 0 }]
+      ]
+    },
+    "Get NanoClaw Status": {
+      "main": [
+        [{ "node": "Respond OK", "type": "main", "index": 0 }]
+      ]
+    },
+    "Unknown Command": {
+      "main": [
+        [{ "node": "Respond OK", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "nanoclaw-ipc-v1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "nanoclaw-ipc-handler",
+  "tags": ["nanoclaw", "ipc", "automation"]
+}

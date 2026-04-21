@@ -2,26 +2,41 @@ import { exec } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
+/**
+ * Race a promise against a deadline.  Rejects with an Error on timeout so
+ * callers can detect the condition and take corrective action (queue, throw,
+ * etc.) instead of blocking forever.
+ */
+function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  label: string,
+): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error(`${label} timed out after ${ms}ms`)),
+        ms,
+      ),
+    ),
+  ]);
+}
+
 import {
   makeWASocket,
   Browsers,
   DisconnectReason,
-  fetchLatestWaWebVersion,
   makeCacheableSignalKeyStore,
   normalizeMessageContent,
+  proto,
   useMultiFileAuthState,
 } from '@whiskeysockets/baileys';
 import type {
   GroupMetadata,
   WAMessageKey,
   WASocket,
-  proto as ProtoTypes,
 } from '@whiskeysockets/baileys';
-// proto is not statically analyzable as a named ESM export from this CJS module
-import { createRequire } from 'module';
-const { proto } = createRequire(import.meta.url)('@whiskeysockets/baileys') as {
-  proto: typeof ProtoTypes;
-};
 
 import {
   ASSISTANT_HAS_OWN_NUMBER,
@@ -66,7 +81,7 @@ export class WhatsAppChannel implements Channel {
   private flushing = false;
   private groupSyncTimerStarted = false;
   /** Cache of recently sent messages for retry requests (max 256 entries). */
-  private sentMessageCache = new Map<string, ProtoTypes.IMessage>();
+  private sentMessageCache = new Map<string, proto.IMessage>();
   /** Short-lived cache of phone-normalized group metadata for outbound sends. */
   private groupMetadataCache = new Map<
     string,
@@ -96,15 +111,9 @@ export class WhatsAppChannel implements Channel {
 
     const { state, saveCreds } = await useMultiFileAuthState(authDir);
 
-    const { version } = await fetchLatestWaWebVersion({}).catch((err) => {
-      logger.warn(
-        { err },
-        'Failed to fetch latest WA Web version, using default',
-      );
-      return { version: undefined };
-    });
+    // v7: version is locked by Baileys internally — do not override with
+    // fetchLatestWaWebVersion as it may cause incompatibility.
     this.sock = makeWASocket({
-      version,
       auth: {
         creds: state.creds,
         keys: makeCacheableSignalKeyStore(state.keys, baileysLogger),
@@ -229,10 +238,12 @@ export class WhatsAppChannel implements Channel {
 
     this.sock.ev.on('creds.update', saveCreds);
 
-    this.sock.ev.on('chats.phoneNumberShare', ({ lid, jid }) => {
+    // v7: 'chats.phoneNumberShare' replaced by 'lid-mapping.update' with { lid, pn }
+    this.sock.ev.on('lid-mapping.update', ({ lid, pn }) => {
       const lidUser = lid?.split('@')[0].split(':')[0];
-      if (lidUser && jid) {
-        this.setLidPhoneMapping(lidUser, jid);
+      const phoneJid = pn && (pn.includes('@') ? pn : `${pn}@s.whatsapp.net`);
+      if (lidUser && phoneJid) {
+        this.setLidPhoneMapping(lidUser, phoneJid);
       }
     });
 
@@ -384,7 +395,11 @@ export class WhatsAppChannel implements Channel {
       return;
     }
     try {
-      const sent = await this.sock.sendMessage(jid, { text: prefixed });
+      const sent = await withTimeout(
+        this.sock.sendMessage(jid, { text: prefixed }),
+        30_000,
+        'sendMessage',
+      );
       // Cache for retry requests (recipient may ask us to re-encrypt)
       if (sent?.key?.id && sent.message) {
         this.sentMessageCache.set(sent.key.id, sent.message);
@@ -395,7 +410,7 @@ export class WhatsAppChannel implements Channel {
       }
       logger.info({ jid, length: prefixed.length }, 'Message sent');
     } catch (err) {
-      // If send fails, queue it for retry on reconnect
+      // If send fails (including timeout), queue it for retry on reconnect
       this.outgoingQueue.push({ jid, text: prefixed });
       logger.warn(
         { jid, err, queueSize: this.outgoingQueue.length },
@@ -408,11 +423,15 @@ export class WhatsAppChannel implements Channel {
     if (!this.connected) {
       throw new Error('WhatsApp not connected');
     }
-    const sent = await this.sock.sendMessage(jid, {
-      audio: audioBuffer,
-      mimetype: 'audio/ogg; codecs=opus',
-      ptt: true,
-    });
+    const sent = await withTimeout(
+      this.sock.sendMessage(jid, {
+        audio: audioBuffer,
+        mimetype: 'audio/ogg; codecs=opus',
+        ptt: true,
+      }),
+      60_000,
+      'sendAudio',
+    );
     if (sent?.key?.id && sent.message) {
       this.sentMessageCache.set(sent.key.id, sent.message);
       if (this.sentMessageCache.size > 256) {
@@ -553,7 +572,11 @@ export class WhatsAppChannel implements Channel {
       return cached.metadata;
     }
 
-    const metadata = await this.sock.groupMetadata(jid);
+    const metadata = await withTimeout(
+      this.sock.groupMetadata(jid),
+      15_000,
+      'groupMetadata',
+    );
     const participants = await Promise.all(
       metadata.participants.map(async (participant) => ({
         ...participant,
@@ -589,7 +612,11 @@ export class WhatsAppChannel implements Channel {
       while (this.outgoingQueue.length > 0) {
         const item = this.outgoingQueue.shift()!;
         // Send directly — queued items are already prefixed by sendMessage
-        const sent = await this.sock.sendMessage(item.jid, { text: item.text });
+        const sent = await withTimeout(
+          this.sock.sendMessage(item.jid, { text: item.text }),
+          30_000,
+          'flushOutgoingQueue.sendMessage',
+        );
         if (sent?.key?.id && sent.message) {
           this.sentMessageCache.set(sent.key.id, sent.message);
         }
