@@ -62,8 +62,11 @@ async function connectSocket(
     process.exit(0);
   }
 
-  // v7: version locked internally — do not override with fetchLatestWaWebVersion.
+  // Pin WA Web version. Baileys' internal default is currently rejected by
+  // WhatsApp with a 405 on connect (WhiskeySockets/Baileys#2489). Keep this
+  // in sync with src/channels/whatsapp.ts.
   const sock = makeWASocket({
+    version: [2, 3000, 1037787856],
     auth: {
       creds: state.creds,
       keys: makeCacheableSignalKeyStore(state.keys, logger),

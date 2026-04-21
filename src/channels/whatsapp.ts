@@ -111,9 +111,12 @@ export class WhatsAppChannel implements Channel {
 
     const { state, saveCreds } = await useMultiFileAuthState(authDir);
 
-    // v7: version is locked by Baileys internally — do not override with
-    // fetchLatestWaWebVersion as it may cause incompatibility.
+    // Pin WA Web version. Baileys' internal default is currently rejected by
+    // WhatsApp with a 405 ("Connection Failure") on both fresh auth and
+    // existing sessions. See WhiskeySockets/Baileys#2489 / #2370. Update this
+    // constant when the community reports a new working build.
     this.sock = makeWASocket({
+      version: [2, 3000, 1037787856],
       auth: {
         creds: state.creds,
         keys: makeCacheableSignalKeyStore(state.keys, baileysLogger),

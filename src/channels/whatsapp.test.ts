@@ -189,18 +189,18 @@ describe('WhatsAppChannel', () => {
   });
 
   // --- Version ---
-  // v7: version is locked internally by Baileys; fetchLatestWaWebVersion is
-  // no longer called. makeWASocket is invoked without a version override.
+  // Version is pinned to work around a WhatsApp-side 405 rejection of
+  // Baileys' default version (WhiskeySockets/Baileys#2489).
 
   describe('version', () => {
-    it('connects without passing an explicit version to makeWASocket', async () => {
+    it('passes the pinned WA Web version to makeWASocket', async () => {
       const opts = createTestOpts();
       const channel = new WhatsAppChannel(opts);
       await connectChannel(channel);
 
       const { makeWASocket } = await import('@whiskeysockets/baileys');
       expect(makeWASocket).toHaveBeenCalledWith(
-        expect.not.objectContaining({ version: expect.anything() }),
+        expect.objectContaining({ version: [2, 3000, 1037787856] }),
       );
       expect(channel.isConnected()).toBe(true);
     });
