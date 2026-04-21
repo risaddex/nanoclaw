@@ -1,17 +1,17 @@
 ---
 name: add-admin-ui
-description: Add a local-only (127.0.0.1) read-only admin UI that lists the groups, chats, registered channels, and NanoClaw configuration. Useful for quickly inspecting what the WhatsApp/Baileys channel sees without querying the SQLite database manually or re-running setup.
+description: Add a local-only (127.0.0.1) admin UI + JSON API to inspect groups, chats, registered channels, and NanoClaw configuration — and a webhook endpoint that external/local callers can POST to in order to deliver a message to an allowlisted JID. Supports reusable message templates referenced by template_id.
 ---
 
 # Admin UI
 
-A tiny localhost-only web console to inspect NanoClaw state at runtime: Baileys groups, registered chats, DB chat metadata, and config.
+A tiny localhost-only web console to inspect NanoClaw state at runtime and to fire webhook deliveries at allowlisted chats.
 
-> **Read-only, loopback-only.** Binds to `127.0.0.1` exclusively. Any request from a non-loopback address is rejected with 403. No write actions in this iteration.
+> **Loopback-only.** Binds to `127.0.0.1` exclusively. Any request from a non-loopback address is rejected with 403. Inspection routes are `GET`-only; webhook routes accept `POST`/`PUT`/`DELETE` but only for loopback.
 
 ## What you get
 
-Open `http://127.0.0.1:<ADMIN_PORT>/` (default `7324`) and you'll see:
+Open `http://127.0.0.1:<ADMIN_PORT>/` (default `7324`):
 
 - **Groups** — every WhatsApp group the bot is a participant in (live from `groupFetchAllParticipating()`).
 - **Group detail** — click a group to see its full metadata including participants.
@@ -19,6 +19,7 @@ Open `http://127.0.0.1:<ADMIN_PORT>/` (default `7324`) and you'll see:
 - **Registered** — the `registered_groups` table (which chats the router actively serves).
 - **Channels** — every installed channel and its connection status.
 - **Config** — non-secret runtime values (assistant name, trigger, timezone, paths).
+- **Webhooks** — manage the send-allowlist, CRUD message templates (`{{variable}}` placeholders), and test deliveries.
 
 Secrets are **never** exposed — no env dump, no credentials.
 
@@ -27,13 +28,50 @@ Secrets are **never** exposed — no env dump, no credentials.
 The UI is a thin client over a JSON API served from the same process. You can `curl` it directly:
 
 ```bash
+# Inspection (read-only)
 curl -s http://127.0.0.1:7324/api/channels   | jq
 curl -s http://127.0.0.1:7324/api/groups     | jq
 curl -s "http://127.0.0.1:7324/api/groups/<jid>@g.us" | jq
 curl -s http://127.0.0.1:7324/api/chats      | jq '.[0:5]'
 curl -s http://127.0.0.1:7324/api/registered | jq 'keys'
 curl -s http://127.0.0.1:7324/api/config     | jq
+
+# Webhook
+curl -s http://127.0.0.1:7324/api/webhook              | jq  # full config
+curl -s -X POST http://127.0.0.1:7324/api/webhook \
+  -H 'content-type: application/json' \
+  -d '{"jid":"5511...@s.whatsapp.net","message":"Build finished"}'
+curl -s -X POST http://127.0.0.1:7324/api/webhook \
+  -H 'content-type: application/json' \
+  -d '{"jid":"5511...@s.whatsapp.net","template_id":"deploy","variables":{"env":"prod","version":"v1.2.3"}}'
 ```
+
+### Webhook — endpoint reference
+
+`POST /api/webhook` — deliver a message. Body is **either** `{ jid, message }` **or** `{ jid, template_id, variables? }`. Enforces that `jid` is on the allowlist. Returns `{ ok, jid, channel, bytes }` on success; `{ error, detail }` with an appropriate status otherwise (`400 missing_jid`, `403 jid_not_in_allowlist`, `404 template_not_found`, `503 channel_not_connected`).
+
+Allowlist:
+- `GET    /api/webhook/allowlist` → `string[]`
+- `PUT    /api/webhook/allowlist` body `{ jids: string[] }` → replaces the full list
+- `POST   /api/webhook/allowlist/<urlencoded-jid>` → adds one JID
+- `DELETE /api/webhook/allowlist/<urlencoded-jid>` → removes one JID
+
+Templates:
+- `GET    /api/webhook/templates` → `Record<id, { id, template, description? }>`
+- `PUT    /api/webhook/templates/<id>` body `{ template, description? }` → upserts
+- `DELETE /api/webhook/templates/<id>` → removes
+
+Template placeholders use Mustache-lite: `{{name}}` → `variables.name` at send time. Missing variables render as empty string (no error). Only `[a-zA-Z0-9_.-]` characters in names.
+
+### Storage
+
+The webhook allowlist + templates are persisted to `store/webhook.json` — a single JSON file rewritten atomically on every mutation. Safe to hand-edit while the service is stopped.
+
+### Security notes on webhook
+
+- Loopback-only bind is the trust boundary. If you want external services to hit the webhook, put a reverse proxy / cloudflared / SSH tunnel in front and add your own auth layer — don't rebind the socket to 0.0.0.0 without one.
+- The allowlist is the second line of defense: even if localhost is compromised, the webhook can only deliver to JIDs you explicitly added via the UI.
+- The webhook uses the channel's own `sendMessage` path, so messages go through existing formatting/retry logic. On a shared WhatsApp number the bot name is still prepended.
 
 ## Installation
 

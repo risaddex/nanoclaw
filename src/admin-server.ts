@@ -15,14 +15,21 @@ import { getRegisteredChannelNames } from './channels/registry.js';
 import type { WhatsAppChannel } from './channels/whatsapp.js';
 import { getAllChats, getAllRegisteredGroups } from './db.js';
 import { logger } from './logger.js';
+import { findChannel } from './router.js';
 import { Channel } from './types.js';
+import {
+  addAllowedJid,
+  deleteTemplate,
+  getWebhookConfig,
+  removeAllowedJid,
+  resolveWebhookRequest,
+  setAllowlist,
+  upsertTemplate,
+} from './webhook.js';
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 
-const UI_DIR = path.resolve(
-  process.cwd(),
-  '.claude/skills/add-admin-ui/ui',
-);
+const UI_DIR = path.resolve(process.cwd(), '.claude/skills/add-admin-ui/ui');
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -68,6 +75,152 @@ function serveStatic(res: http.ServerResponse, relPath: string): void {
     'Content-Length': data.length.toString(),
   });
   res.end(data);
+}
+
+async function readJsonBody(
+  req: http.IncomingMessage,
+): Promise<Record<string, unknown>> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let total = 0;
+    req.on('data', (chunk: Buffer) => {
+      total += chunk.length;
+      if (total > 256 * 1024) {
+        reject(new Error('request body too large'));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => {
+      const raw = Buffer.concat(chunks).toString('utf-8').trim();
+      if (!raw) {
+        resolve({});
+        return;
+      }
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          resolve(parsed as Record<string, unknown>);
+        } else {
+          reject(new Error('body must be a JSON object'));
+        }
+      } catch (err) {
+        reject(err);
+      }
+    });
+    req.on('error', reject);
+  });
+}
+
+async function handleWebhook(
+  method: string,
+  apiPath: string,
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  channels: Channel[],
+): Promise<void> {
+  // POST /webhook — deliver a message
+  if (apiPath === '/webhook' && method === 'POST') {
+    const body = await readJsonBody(req);
+    const resolved = resolveWebhookRequest(body);
+    if (!resolved.ok) {
+      json(res, resolved.error.status, {
+        error: resolved.error.error,
+        detail: resolved.error.detail,
+      });
+      return;
+    }
+    const { jid, text } = resolved.message;
+    const channel = findChannel(channels, jid);
+    if (!channel) {
+      json(res, 503, { error: 'no_channel_for_jid', detail: jid });
+      return;
+    }
+    if (!channel.isConnected()) {
+      json(res, 503, { error: 'channel_not_connected', detail: channel.name });
+      return;
+    }
+    await channel.sendMessage(jid, text);
+    logger.info(
+      { jid, channel: channel.name, length: text.length },
+      'webhook delivered',
+    );
+    json(res, 200, {
+      ok: true,
+      jid,
+      channel: channel.name,
+      bytes: text.length,
+    });
+    return;
+  }
+
+  // GET /webhook — config snapshot
+  if (apiPath === '/webhook' && method === 'GET') {
+    json(res, 200, getWebhookConfig());
+    return;
+  }
+
+  // Allowlist CRUD
+  if (apiPath === '/webhook/allowlist' && method === 'GET') {
+    json(res, 200, getWebhookConfig().allowlist);
+    return;
+  }
+  if (apiPath === '/webhook/allowlist' && method === 'PUT') {
+    const body = await readJsonBody(req);
+    const jids = Array.isArray(body.jids) ? (body.jids as string[]) : [];
+    const cfg = setAllowlist(jids);
+    json(res, 200, cfg.allowlist);
+    return;
+  }
+  const allowMatch = apiPath.match(/^\/webhook\/allowlist\/(.+)$/);
+  if (allowMatch) {
+    const jid = decodeURIComponent(allowMatch[1]);
+    if (method === 'POST') {
+      const cfg = addAllowedJid(jid);
+      json(res, 200, cfg.allowlist);
+      return;
+    }
+    if (method === 'DELETE') {
+      const cfg = removeAllowedJid(jid);
+      json(res, 200, cfg.allowlist);
+      return;
+    }
+    json(res, 405, { error: 'method_not_allowed' });
+    return;
+  }
+
+  // Template CRUD
+  if (apiPath === '/webhook/templates' && method === 'GET') {
+    json(res, 200, getWebhookConfig().templates);
+    return;
+  }
+  const tplMatch = apiPath.match(/^\/webhook\/templates\/(.+)$/);
+  if (tplMatch) {
+    const id = decodeURIComponent(tplMatch[1]);
+    if (method === 'PUT') {
+      const body = await readJsonBody(req);
+      const template = typeof body.template === 'string' ? body.template : '';
+      const description =
+        typeof body.description === 'string' ? body.description : undefined;
+      if (!template) {
+        json(res, 400, { error: 'missing_template' });
+        return;
+      }
+      const cfg = upsertTemplate({ id, template, description });
+      json(res, 200, cfg.templates[id]);
+      return;
+    }
+    if (method === 'DELETE') {
+      deleteTemplate(id);
+      json(res, 200, { ok: true, id });
+      return;
+    }
+    json(res, 405, { error: 'method_not_allowed' });
+    return;
+  }
+
+  json(res, 404, { error: 'not_found', path: apiPath });
 }
 
 async function handleApi(
@@ -157,15 +310,21 @@ export function startAdminServer(channels: Channel[]): http.Server {
       return;
     }
 
-    if (req.method !== 'GET') {
-      json(res, 405, { error: 'method_not_allowed' });
-      return;
-    }
-
+    const method = req.method || 'GET';
     const url = new URL(req.url || '/', 'http://127.0.0.1');
     const pathname = url.pathname.replace(/\/+$/, '') || '/';
 
     try {
+      if (pathname.startsWith('/api/webhook')) {
+        await handleWebhook(method, pathname.slice(4), req, res, channels);
+        return;
+      }
+
+      if (method !== 'GET') {
+        json(res, 405, { error: 'method_not_allowed' });
+        return;
+      }
+
       if (pathname.startsWith('/api/')) {
         await handleApi(pathname.slice(4), channels, res);
         return;

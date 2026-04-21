@@ -42,10 +42,16 @@
               <span>Config</span>
             </button>
           </li>
+          <li>
+            <button class="tab" data-tab="webhooks" role="tab" aria-selected="false">
+              <span class="tab-key">5</span>
+              <span>Webhooks</span>
+            </button>
+          </li>
         </ul>
         <footer class="sidebar-footer">
           <p class="hint">
-            Press <kbd>/</kbd> to search, <kbd>1</kbd>&ndash;<kbd>4</kbd> to switch tabs.
+            Press <kbd>/</kbd> to search, <kbd>1</kbd>&ndash;<kbd>5</kbd> to switch tabs.
           </p>
         </footer>
       </nav>
@@ -126,6 +132,20 @@
             </div>
           </div>
           <div class="panel-body" data-body="config"></div>
+        </section>
+
+        <!-- Webhooks -->
+        <section class="panel hidden" data-panel="webhooks" aria-labelledby="webhooks-title">
+          <div class="panel-head">
+            <div>
+              <h2 id="webhooks-title">Webhooks</h2>
+              <p class="panel-sub">Outbound webhook allowlist, templates, and tester.</p>
+            </div>
+            <div class="panel-actions">
+              <button class="btn" data-refresh="webhooks">Refresh</button>
+            </div>
+          </div>
+          <div class="panel-body" data-body="webhooks"></div>
         </section>
       </main>
     </div>
