@@ -730,6 +730,17 @@ async function main(): Promise<void> {
       if (!text) return Promise.resolve();
       return channel.sendMessage(jid, text);
     },
+    sendAudio: async (jid, buffer) => {
+      const channel = findChannel(channels, jid);
+      if (!channel) throw new Error(`No channel for JID: ${jid}`);
+      const audioCapable = channel as unknown as {
+        sendAudio?: (jid: string, buffer: Buffer) => Promise<void>;
+      };
+      if (!audioCapable.sendAudio) {
+        throw new Error(`Channel "${channel.name}" does not support audio`);
+      }
+      return audioCapable.sendAudio(jid, buffer);
+    },
     registeredGroups: () => registeredGroups,
     registerGroup,
     syncGroups: async (force: boolean) => {

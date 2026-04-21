@@ -404,6 +404,25 @@ export class WhatsAppChannel implements Channel {
     }
   }
 
+  async sendAudio(jid: string, audioBuffer: Buffer): Promise<void> {
+    if (!this.connected) {
+      throw new Error('WhatsApp not connected');
+    }
+    const sent = await this.sock.sendMessage(jid, {
+      audio: audioBuffer,
+      mimetype: 'audio/ogg; codecs=opus',
+      ptt: true,
+    });
+    if (sent?.key?.id && sent.message) {
+      this.sentMessageCache.set(sent.key.id, sent.message);
+      if (this.sentMessageCache.size > 256) {
+        const oldest = this.sentMessageCache.keys().next().value!;
+        this.sentMessageCache.delete(oldest);
+      }
+    }
+    logger.info({ jid, bytes: audioBuffer.length }, 'Voice note sent');
+  }
+
   isConnected(): boolean {
     return this.connected;
   }

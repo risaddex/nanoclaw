@@ -3,6 +3,7 @@ import path from 'path';
 
 import { CronExpressionParser } from 'cron-parser';
 
+import { handleTtsIpc } from './tts.js';
 import { DATA_DIR, IPC_POLL_INTERVAL, TIMEZONE } from './config.js';
 import { AvailableGroup } from './container-runner.js';
 import { createTask, deleteTask, getTaskById, updateTask } from './db.js';
@@ -12,6 +13,7 @@ import { RegisteredGroup } from './types.js';
 
 export interface IpcDeps {
   sendMessage: (jid: string, text: string) => Promise<void>;
+  sendAudio: (jid: string, buffer: Buffer) => Promise<void>;
   registeredGroups: () => Record<string, RegisteredGroup>;
   registerGroup: (jid: string, group: RegisteredGroup) => void;
   syncGroups: (force: boolean) => Promise<void>;
@@ -462,7 +464,27 @@ export async function processTaskIpc(
       }
       break;
 
-    default:
-      logger.warn({ type: data.type }, 'Unknown IPC task type');
+    default: {
+      const handledByTts = await handleTtsIpc(
+        data as unknown as Record<string, unknown>,
+        sourceGroup,
+        isMain,
+        DATA_DIR,
+        {
+          sendAudio: deps.sendAudio,
+          registeredGroups: () =>
+            Object.fromEntries(
+              Object.entries(deps.registeredGroups()).map(([jid, g]) => [
+                jid,
+                { jid, folder: g.folder },
+              ]),
+            ),
+        },
+      );
+      if (!handledByTts) {
+        logger.warn({ type: data.type }, 'Unknown IPC task type');
+      }
+      break;
+    }
   }
 }

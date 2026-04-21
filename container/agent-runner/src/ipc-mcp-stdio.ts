@@ -14,6 +14,7 @@ import { CronExpressionParser } from 'cron-parser';
 const IPC_DIR = '/workspace/ipc';
 const MESSAGES_DIR = path.join(IPC_DIR, 'messages');
 const TASKS_DIR = path.join(IPC_DIR, 'tasks');
+const TTS_RESULTS_DIR = path.join(IPC_DIR, 'tts_results');
 
 // Context from environment variables (set by the agent runner)
 const chatJid = process.env.NANOCLAW_CHAT_JID!;
@@ -499,6 +500,98 @@ Use available_groups.json to find the JID for a group. The folder name must be c
           text: `Group "${args.name}" registered. It will start receiving messages immediately.`,
         },
       ],
+    };
+  },
+);
+
+async function waitForTtsResult(
+  requestId: string,
+  maxWait = 90_000,
+): Promise<{ success: boolean; message: string }> {
+  const resultFile = path.join(TTS_RESULTS_DIR, `${requestId}.json`);
+  const pollInterval = 1000;
+  let elapsed = 0;
+  while (elapsed < maxWait) {
+    if (fs.existsSync(resultFile)) {
+      try {
+        const result = JSON.parse(fs.readFileSync(resultFile, 'utf-8'));
+        fs.unlinkSync(resultFile);
+        return result;
+      } catch (err) {
+        return { success: false, message: `failed to read result: ${err}` };
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, pollInterval));
+    elapsed += pollInterval;
+  }
+  return { success: false, message: 'tts request timed out' };
+}
+
+server.tool(
+  'reply_with_audio',
+  `Send a voice-note reply to the current chat via local text-to-speech.
+
+USE THIS TOOL ONLY when the user EXPLICITLY asks for an audio response, for example:
+- "me responda por áudio ..."
+- "resuma isso em um áudio"
+- "responde em áudio"
+- "answer me with a voice note"
+
+Do NOT use it proactively or when only the topic is audio-related. If the user did
+not explicitly request audio, just reply with text as normal.
+
+The host synthesizes the provided \`text\` via the macOS \`say\` command, re-encodes
+it to OGG/Opus, and sends it as a WhatsApp voice note (push-to-talk) to the current
+chat. Keep the text concise — this is spoken aloud, so write for the ear, not the eye.
+Avoid Markdown, code blocks, URLs, and emojis; spell out numbers and abbreviations
+when it helps. Aim for under ~600 characters per audio unless the user asked for
+something longer.`,
+  {
+    text: z
+      .string()
+      .min(1)
+      .max(4000)
+      .describe(
+        'Plain text to speak aloud. No Markdown, URLs, or code. Write as if narrating.',
+      ),
+    voice: z
+      .string()
+      .optional()
+      .describe(
+        'Optional voice override (e.g. "Luciana", "Samantha"). Defaults to TTS_VOICE / TTS_LANGUAGE on the host.',
+      ),
+    rate: z
+      .string()
+      .optional()
+      .describe(
+        'Optional speaking rate in words/minute, e.g. "180". Defaults to TTS_RATE.',
+      ),
+  },
+  async (args) => {
+    const requestId = `tts-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    writeIpcFile(TASKS_DIR, {
+      type: 'tts_reply',
+      requestId,
+      groupFolder,
+      chatJid,
+      text: args.text,
+      voice: args.voice,
+      rate: args.rate,
+      timestamp: new Date().toISOString(),
+    });
+
+    const result = await waitForTtsResult(requestId);
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: result.success
+            ? `Voice note sent. ${result.message}`
+            : `Audio reply failed: ${result.message}`,
+        },
+      ],
+      isError: !result.success,
     };
   },
 );

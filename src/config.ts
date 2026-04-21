@@ -29,6 +29,11 @@ export const ADMIN_PORT = Math.max(
   parseInt(process.env.ADMIN_PORT || '7324', 10) || 7324,
 );
 
+export const TTS_COMMAND = process.env.TTS_COMMAND || 'say';
+export const TTS_VOICE = process.env.TTS_VOICE || '';
+export const TTS_LANGUAGE = process.env.TTS_LANGUAGE || 'pt_BR';
+export const TTS_RATE = process.env.TTS_RATE || '';
+
 // Absolute paths needed for container mounts
 const PROJECT_ROOT = process.cwd();
 const HOME_DIR = process.env.HOME || os.homedir();
