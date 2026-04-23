@@ -1,0 +1,158 @@
+{
+  "name": "NanoClaw IPC Bridge",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "nanoclaw-ipc",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "node-webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [200, 300],
+      "webhookId": "nanoclaw-ipc-bridge"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================\n// NANOCLAW IPC BRIDGE — Validação de Payload\n// ============================================================\n// Payload esperado (POST body):\n//\n// Para enviar MENSAGEM:\n// {\n//   \"group\":   \"main\",              // pasta do grupo (ex: main, familia)\n//   \"type\":    \"message\",\n//   \"chatJid\": \"5511999999999@s.whatsapp.net\",\n//   \"text\":    \"Olá!\"\n// }\n//\n// Para AGENDAR TAREFA:\n// {\n//   \"group\":          \"main\",\n//   \"type\":           \"schedule_task\",\n//   \"prompt\":         \"Faça o resumo do dia\",\n//   \"schedule_type\":  \"cron\",         // cron | interval | once\n//   \"schedule_value\": \"0 9 * * *\",\n//   \"targetJid\":      \"5511999999999@s.whatsapp.net\",\n//   \"context_mode\":   \"isolated\"      // isolated | group\n// }\n//\n// Para PAUSAR / RETOMAR / CANCELAR TAREFA:\n// {\n//   \"group\":  \"main\",\n//   \"type\":   \"pause_task\",   // pause_task | resume_task | cancel_task\n//   \"taskId\": \"task-xxx\"\n// }\n//\n// Outros tipos suportados: update_task, refresh_groups, register_group\n// ============================================================\n\nconst body = $input.first().json.body || $input.first().json;\n\nconst VALID_TYPES = [\n  'message',\n  'schedule_task',\n  'pause_task',\n  'resume_task',\n  'cancel_task',\n  'update_task',\n  'refresh_groups',\n  'register_group'\n];\n\n// Validação dos campos obrigatórios\nif (!body.group) {\n  throw new Error('Campo obrigatório faltando: \"group\" (nome da pasta do grupo, ex: main)');\n}\nif (!body.type) {\n  throw new Error('Campo obrigatório faltando: \"type\" (tipo do comando IPC)');\n}\nif (!VALID_TYPES.includes(body.type)) {\n  throw new Error(`Tipo desconhecido: \"${body.type}\". Tipos válidos: ${VALID_TYPES.join(', ')}`);\n}\n\n// Validações específicas por tipo\nif (body.type === 'message') {\n  if (!body.chatJid) throw new Error('type=message requer \"chatJid\"');\n  if (!body.text)    throw new Error('type=message requer \"text\"');\n}\nif (body.type === 'schedule_task') {\n  if (!body.prompt)         throw new Error('type=schedule_task requer \"prompt\"');\n  if (!body.schedule_type)  throw new Error('type=schedule_task requer \"schedule_type\" (cron | interval | once)');\n  if (!body.schedule_value) throw new Error('type=schedule_task requer \"schedule_value\"');\n  if (!body.targetJid)      throw new Error('type=schedule_task requer \"targetJid\"');\n}\nif (['pause_task', 'resume_task', 'cancel_task', 'update_task'].includes(body.type)) {\n  if (!body.taskId) throw new Error(`type=${body.type} requer \"taskId\"`);\n}\n\n// Determina subdiretório: messages/ ou tasks/\nconst subDir = body.type === 'message' ? 'messages' : 'tasks';\n\n// Gera nome de arquivo único\nconst ts     = Date.now();\nconst rnd    = Math.random().toString(36).slice(2, 8);\nconst fileName = `ipc-${ts}-${rnd}.json`;\n\n// Remove o campo \"group\" do payload IPC (é apenas metadado do workflow)\nconst { group, ...ipcPayload } = body;\n\nreturn [{ json: { group, subDir, fileName, ipcPayload } }];"
+      },
+      "id": "node-validate",
+      "name": "Validar Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [420, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Monta caminho do arquivo e codifica o conteúdo em base64\n// para evitar problemas de escaping ao passar para o shell.\n\nconst NANOCLAW_DATA_DIR = '/Users/danilo/Work/Projects/nanoclaw/data';\n\nconst { group, subDir, fileName, ipcPayload } = $input.first().json;\n\nconst dirPath      = `${NANOCLAW_DATA_DIR}/ipc/${group}/${subDir}`;\nconst filePath     = `${dirPath}/${fileName}`;\nconst fileContent  = JSON.stringify(ipcPayload, null, 2);\n\n// Codifica em base64 para passar com segurança ao Execute Command\nconst fileContentB64 = Buffer.from(fileContent, 'utf8').toString('base64');\n\nreturn [{ json: { group, subDir, fileName, ipcPayload, dirPath, filePath, fileContentB64 } }];"
+      },
+      "id": "node-build-path",
+      "name": "Montar Caminho IPC",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "command": "=python3 -c \"\nimport base64, json, os, sys\n\ndirPath  = '{{ $json.dirPath }}'\nfilePath = '{{ $json.filePath }}'\ncontent  = base64.b64decode('{{ $json.fileContentB64 }}').decode('utf-8')\n\nos.makedirs(dirPath, exist_ok=True)\nwith open(filePath, 'w') as f:\n    f.write(content)\n\nprint('OK: ' + filePath)\n\""
+      },
+      "id": "node-write-file",
+      "name": "Escrever Arquivo IPC",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [860, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const cmdResult  = $input.first().json;\nconst prevData   = $('Montar Caminho IPC').first().json;\n\nconst success = cmdResult.exitCode === 0;\n\nreturn [{\n  json: {\n    ok:      success,\n    message: success\n      ? `Comando '${prevData.ipcPayload.type}' enviado ao grupo '${prevData.group}' com sucesso.`\n      : `Falha ao escrever arquivo IPC: ${cmdResult.stderr}`,\n    type:    prevData.ipcPayload.type,\n    group:   prevData.group,\n    file:    prevData.fileName,\n    path:    prevData.filePath,\n    payload: prevData.ipcPayload\n  }\n}];"
+      },
+      "id": "node-build-response",
+      "name": "Montar Resposta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1080, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": "={{ $json.ok ? 200 : 500 }}"
+        }
+      },
+      "id": "node-respond-ok",
+      "name": "Responder Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1300, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: false, message: $json.message }) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "node-respond-error",
+      "name": "Responder Erro de Validação",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [640, 500]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validar Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar Payload": {
+      "main": [
+        [
+          {
+            "node": "Montar Caminho IPC",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar Caminho IPC": {
+      "main": [
+        [
+          {
+            "node": "Escrever Arquivo IPC",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Escrever Arquivo IPC": {
+      "main": [
+        [
+          {
+            "node": "Montar Resposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar Resposta": {
+      "main": [
+        [
+          {
+            "node": "Responder Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "id": "nanoclaw",
+      "name": "nanoclaw"
+    }
+  ],
+  "triggerCount": 1,
+  "versionId": "1"
+}
