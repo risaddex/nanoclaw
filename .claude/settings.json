@@ -1,11 +1,5 @@
 {
   "sandbox": {
-    "network": {
-      "allowedDomains": [
-        "npm.registry.com",
-        "us.i.posthog.com",
-        "n8n.daniloromano.dev"
-      ]
-    }
+    "enabled": false
   }
 }
