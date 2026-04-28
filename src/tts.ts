@@ -52,10 +52,7 @@ function runCmd(
   return new Promise((resolve) => {
     const proc = spawn(cmd, args, { stdio: ['ignore', 'ignore', 'pipe'] });
     let stderr = '';
-    const timer = setTimeout(
-      () => proc.kill('SIGTERM'),
-      opts.timeoutMs ?? 120_000,
-    );
+    const timer = setTimeout(() => proc.kill('SIGTERM'), opts.timeoutMs ?? 120_000);
     proc.stderr.on('data', (chunk) => {
       stderr += chunk.toString();
     });
@@ -134,18 +131,10 @@ async function synthesizeToOgg(
   }
 }
 
-function writeResult(
-  dataDir: string,
-  sourceGroup: string,
-  requestId: string,
-  result: SkillResult,
-): void {
+function writeResult(dataDir: string, sourceGroup: string, requestId: string, result: SkillResult): void {
   const resultsDir = path.join(dataDir, 'ipc', sourceGroup, 'tts_results');
   fs.mkdirSync(resultsDir, { recursive: true });
-  fs.writeFileSync(
-    path.join(resultsDir, `${requestId}.json`),
-    JSON.stringify(result),
-  );
+  fs.writeFileSync(path.join(resultsDir, `${requestId}.json`), JSON.stringify(result));
 }
 
 function resolveJidForFolder(
@@ -191,19 +180,14 @@ export async function handleTtsIpc(
       if (!text) {
         result = { success: false, message: 'missing text' };
       } else {
-        const jid =
-          (data.chatJid as string | undefined) ||
-          resolveJidForFolder(sourceGroup, deps.registeredGroups());
+        const jid = (data.chatJid as string | undefined) || resolveJidForFolder(sourceGroup, deps.registeredGroups());
         if (!jid) {
           result = {
             success: false,
             message: `no registered jid for folder "${sourceGroup}"`,
           };
         } else {
-          logger.info(
-            { sourceGroup, jid, chars: text.length },
-            'tts: synthesizing',
-          );
+          logger.info({ sourceGroup, jid, chars: text.length }, 'tts: synthesizing');
           const synth = await synthesizeToOgg(text, {
             voice: data.voice as string | undefined,
             rate: data.rate as string | undefined,
@@ -233,10 +217,7 @@ export async function handleTtsIpc(
   if (result.success) {
     logger.info({ requestId, sourceGroup }, 'tts: delivered');
   } else {
-    logger.warn(
-      { requestId, sourceGroup, message: result.message },
-      'tts: failed',
-    );
+    logger.warn({ requestId, sourceGroup, message: result.message }, 'tts: failed');
   }
   return true;
 }

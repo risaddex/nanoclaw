@@ -32,10 +32,7 @@ function read(): WebhookConfig {
     const parsed = JSON.parse(raw) as Partial<WebhookConfig>;
     return {
       allowlist: Array.isArray(parsed.allowlist) ? parsed.allowlist : [],
-      templates:
-        parsed.templates && typeof parsed.templates === 'object'
-          ? parsed.templates
-          : {},
+      templates: parsed.templates && typeof parsed.templates === 'object' ? parsed.templates : {},
     };
   } catch {
     return { ...EMPTY, templates: {} };
@@ -58,9 +55,7 @@ export function isJidAllowed(jid: string): boolean {
 }
 
 export function setAllowlist(jids: string[]): WebhookConfig {
-  const unique = Array.from(
-    new Set(jids.filter((j) => typeof j === 'string' && j.trim())),
-  );
+  const unique = Array.from(new Set(jids.filter((j) => typeof j === 'string' && j.trim())));
   const cfg = read();
   cfg.allowlist = unique;
   write(cfg);
@@ -106,10 +101,7 @@ export function deleteTemplate(id: string): WebhookConfig {
  * Mustache-lite: replaces `{{name}}` occurrences with values[name].
  * Missing variables render as empty string (no error).
  */
-export function renderTemplate(
-  template: string,
-  variables: Record<string, unknown> = {},
-): string {
+export function renderTemplate(template: string, variables: Record<string, unknown> = {}): string {
   return template.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (_, key) => {
     const v = variables[key];
     return v === undefined || v === null ? '' : String(v);
@@ -133,9 +125,7 @@ export interface WebhookResolutionError {
  */
 export function resolveWebhookRequest(
   body: Record<string, unknown>,
-):
-  | { ok: true; message: ResolvedMessage }
-  | { ok: false; error: WebhookResolutionError } {
+): { ok: true; message: ResolvedMessage } | { ok: false; error: WebhookResolutionError } {
   const jid = typeof body.jid === 'string' ? body.jid.trim() : '';
   if (!jid) {
     return {
@@ -169,9 +159,7 @@ export function resolveWebhookRequest(
       };
     }
     const vars =
-      body.variables && typeof body.variables === 'object'
-        ? (body.variables as Record<string, unknown>)
-        : {};
+      body.variables && typeof body.variables === 'object' ? (body.variables as Record<string, unknown>) : {};
     return {
       ok: true,
       message: { jid, text: renderTemplate(tpl.template, vars) },

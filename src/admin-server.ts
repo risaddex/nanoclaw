@@ -45,9 +45,7 @@ const MIME: Record<string, string> = {
 };
 
 function findWhatsApp(channels: Channel[]): WhatsAppChannel | undefined {
-  return channels.find((c) => c.name === 'whatsapp') as
-    | WhatsAppChannel
-    | undefined;
+  return channels.find((c) => c.name === 'whatsapp') as WhatsAppChannel | undefined;
 }
 
 function json(res: http.ServerResponse, status: number, body: unknown): void {
@@ -77,9 +75,7 @@ function serveStatic(res: http.ServerResponse, relPath: string): void {
   res.end(data);
 }
 
-async function readJsonBody(
-  req: http.IncomingMessage,
-): Promise<Record<string, unknown>> {
+async function readJsonBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let total = 0;
@@ -142,10 +138,7 @@ async function handleWebhook(
       return;
     }
     await channel.sendMessage(jid, text);
-    logger.info(
-      { jid, channel: channel.name, length: text.length },
-      'webhook delivered',
-    );
+    logger.info({ jid, channel: channel.name, length: text.length }, 'webhook delivered');
     json(res, 200, {
       ok: true,
       jid,
@@ -201,8 +194,7 @@ async function handleWebhook(
     if (method === 'PUT') {
       const body = await readJsonBody(req);
       const template = typeof body.template === 'string' ? body.template : '';
-      const description =
-        typeof body.description === 'string' ? body.description : undefined;
+      const description = typeof body.description === 'string' ? body.description : undefined;
       if (!template) {
         json(res, 400, { error: 'missing_template' });
         return;
@@ -223,11 +215,7 @@ async function handleWebhook(
   json(res, 404, { error: 'not_found', path: apiPath });
 }
 
-async function handleApi(
-  apiPath: string,
-  channels: Channel[],
-  res: http.ServerResponse,
-): Promise<void> {
+async function handleApi(apiPath: string, channels: Channel[], res: http.ServerResponse): Promise<void> {
   if (apiPath === '/channels') {
     json(
       res,
@@ -345,10 +333,7 @@ export function startAdminServer(channels: Channel[]): http.Server {
   });
 
   server.listen(ADMIN_PORT, '127.0.0.1', () => {
-    logger.info(
-      { port: ADMIN_PORT, url: `http://127.0.0.1:${ADMIN_PORT}` },
-      'admin UI listening on 127.0.0.1',
-    );
+    logger.info({ port: ADMIN_PORT, url: `http://127.0.0.1:${ADMIN_PORT}` }, 'admin UI listening on 127.0.0.1');
   });
 
   server.on('error', (err) => {
