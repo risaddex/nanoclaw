@@ -92,6 +92,10 @@ class StatusBarController: NSObject {
 
         menu.addItem(NSMenuItem.separator())
 
+        let dashboard = NSMenuItem(title: "Open Admin Dashboard", action: #selector(openAdminDashboard), keyEquivalent: "d")
+        dashboard.target = self
+        menu.addItem(dashboard)
+
         let logs = NSMenuItem(title: "View Logs", action: #selector(viewLogs), keyEquivalent: "")
         logs.target = self
         menu.addItem(logs)
@@ -113,6 +117,13 @@ class StatusBarController: NSObject {
         let uid = getuid()
         run("/bin/launchctl", ["kickstart", "-k", "gui/\(uid)/com.nanoclaw"])
         refresh(after: 3)
+    }
+
+    @objc private func openAdminDashboard() {
+        let port = ProcessInfo.processInfo.environment["ADMIN_PORT"] ?? "7324"
+        if let url = URL(string: "http://127.0.0.1:\(port)/") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     @objc private func viewLogs() {
